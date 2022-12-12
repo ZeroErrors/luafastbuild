@@ -1,0 +1,86 @@
+// Content of this file is copied from FASTBuild (thirdparty/fastbuild/Code/fbuild.bff)
+//------------------------------------------------------------------------------
+// Aliases : All-$Platform$-$Config$
+//------------------------------------------------------------------------------
+ForEach( .BuildConfig in .BuildConfigs )
+{
+    Using( .BuildConfig )
+
+    Alias( 'All-$Platform$-$BuildConfigName$' ) { .Targets = .'Targets_$Platform$_$BuildConfigName$' }
+}
+
+// TODO: Alias Exes
+
+// Aliases : All-$Platform$
+//------------------------------------------------------------------------------
+.Platforms = { 'x64', 'x64Clang', 'x64Linux', 'x64ClangLinux', 'x64OSX', 'ARMOSX' }
+.PlatformConfigs_x64           = { 'Debug', 'Analyze', 'Profile', 'Release', 'ASan', 'TSan' }
+.PlatformConfigs_x64Clang      = { 'Debug', 'Analyze', 'Profile', 'Release', 'ASan', 'TSan' }
+.PlatformConfigs_x64Linux      = { 'Debug', 'Profile', 'Release', 'ASan', 'TSan' }
+.PlatformConfigs_x64ClangLinux = { 'Debug', 'Profile', 'Release' }
+#if USING_CLANG_6
+                               + { 'ASan', 'MSan', 'TSan' }
+#endif
+.PlatformConfigs_x64OSX        = { 'Debug', 'Profile', 'Release' }
+.PlatformConfigs_ARMOSX        = { 'Debug', 'Profile', 'Release' }
+ForEach( .Platform in .Platforms )
+{
+    Alias( 'All-$Platform$' )
+    {
+        .Targets = {}
+        ForEach( .Config in .'PlatformConfigs_$Platform$' )
+        {
+            // TODO:B Exclude windows configs that don't work yet
+            // x64Clang Analyze config - not working yet
+            // x64Clang ASan config - not working yet
+            // x64Clang TSan config - not working yet (not supported by Clang on Windows)
+            // x64 ASan config - not working yet
+            // x64 TSan config - not working yet (not supported by MSVC on Windows)
+            If( !( ( .Platform == 'x64Clang' ) && ( .Config == 'Analyze' ) ) &&
+                !( ( .Platform == 'x64Clang' ) && ( .Config == 'ASan' ) ) &&
+                !( ( .Platform == 'x64Clang' ) && ( .Config == 'TSan' ) ) &&
+                !( ( .Platform == 'x64' ) && ( .Config == 'ASan' ) ) &&
+                !( ( .Platform == 'x64' ) && ( .Config == 'TSan' ) ) )
+            {
+                ^Targets + { 'All-$Platform$-$Config$' }
+            }
+        }
+    }
+}
+
+// Aliases : All
+//------------------------------------------------------------------------------
+#if __WINDOWS__
+    Alias( 'All' )
+    {
+        .Targets        = { 'All-x64Clang',
+                            'All-x64'
+                          }
+    }
+#endif
+#if __OSX__
+    Alias( 'All' )
+    {
+        .Targets        = { 'All-x64OSX' }
+        #if CLANG_SUPPORTS_OSXARM
+                        + { 'All-ARMOSX' }
+        #endif
+    }
+#endif
+#if __LINUX__
+    Alias( 'All' )
+    {
+        .Targets        = { 'All-x64Linux',
+                            'All-x64ClangLinux'
+                          }
+    }
+#endif
+
+// TODO: Aliases tests
+
+// Aliases : All+Tests
+//------------------------------------------------------------------------------
+Alias( 'All+Tests' )
+{
+    .Targets        = { 'All', 'Tests' }
+}

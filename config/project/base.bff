@@ -1,0 +1,29 @@
+// Content of this file is copied from FASTBuild (thirdparty/fastbuild/Code/fbuild.bff)
+//------------------------------------------------------------------------------
+// VisualStudio Project Generation
+//------------------------------------------------------------------------------
+#if __WINDOWS__
+    .ProjectCommon =
+    [
+        .ProjectBuildCommand        = 'cd ^$(SolutionDir)\..\..\Code\ &amp; fbuild -vs -dist -monitor -cache ^$(ProjectName)-^$(Configuration)'
+        .ProjectRebuildCommand      = 'cd ^$(SolutionDir)\..\..\Code\ &amp; fbuild -vs -dist -monitor -cache -clean ^$(ProjectName)-^$(Configuration)'
+        .OutputDirectory            = '^$(SolutionDir)\Temp'
+        .IntermediateDirectory      = '^$(SolutionDir)\Temp'
+        .BuildLogFile               = '^$(SolutionDir)\Temp\^$(ProjectName)-^$(Configuration).log'
+        .Platform                   = 'x64'
+        .PlatformToolset            = '$VS_PlatformToolset$'
+    ]
+
+    .Project_x64_Debug        = [ Using( .ProjectCommon ) .SolutionPlatform = 'x64'         .SolutionConfig = 'Debug'   .Config = '$SolutionPlatform$-$SolutionConfig$' ]
+    .Project_x64_Analyze      = [ Using( .ProjectCommon ) .SolutionPlatform = 'x64'         .SolutionConfig = 'Analyze' .Config = '$SolutionPlatform$-$SolutionConfig$' ]
+    .Project_x64_Profile      = [ Using( .ProjectCommon ) .SolutionPlatform = 'x64'         .SolutionConfig = 'Profile' .Config = '$SolutionPlatform$-$SolutionConfig$' ]
+    .Project_x64_Release      = [ Using( .ProjectCommon ) .SolutionPlatform = 'x64'         .SolutionConfig = 'Release' .Config = '$SolutionPlatform$-$SolutionConfig$' ]
+    .Project_x64_ASan         = [ Using( .ProjectCommon ) .SolutionPlatform = 'x64'         .SolutionConfig = 'ASan'    .Config = '$SolutionPlatform$-$SolutionConfig$' ]
+    .Project_x64_TSan         = [ Using( .ProjectCommon ) .SolutionPlatform = 'x64'         .SolutionConfig = 'TSan'    .Config = '$SolutionPlatform$-$SolutionConfig$' ]
+    .Project_x64Clang_Debug   = [ Using( .ProjectCommon ) .SolutionPlatform = 'x64Clang'    .SolutionConfig = 'Debug'   .Config = '$SolutionPlatform$-$SolutionConfig$' ]
+    .Project_x64Clang_Analyze = [ Using( .ProjectCommon ) .SolutionPlatform = 'x64Clang'    .SolutionConfig = 'Analyze' .Config = '$SolutionPlatform$-$SolutionConfig$' ]
+    .Project_x64Clang_Profile = [ Using( .ProjectCommon ) .SolutionPlatform = 'x64Clang'    .SolutionConfig = 'Profile' .Config = '$SolutionPlatform$-$SolutionConfig$' ]
+    .Project_x64Clang_Release = [ Using( .ProjectCommon ) .SolutionPlatform = 'x64Clang'    .SolutionConfig = 'Release' .Config = '$SolutionPlatform$-$SolutionConfig$' ]
+    .Project_x64Clang_ASan    = [ Using( .ProjectCommon ) .SolutionPlatform = 'x64Clang'    .SolutionConfig = 'ASan'    .Config = '$SolutionPlatform$-$SolutionConfig$' ]
+    .Project_x64Clang_TSan    = [ Using( .ProjectCommon ) .SolutionPlatform = 'x64Clang'    .SolutionConfig = 'TSan'    .Config = '$SolutionPlatform$-$SolutionConfig$' ]
+#endif

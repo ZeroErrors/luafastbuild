@@ -1,0 +1,363 @@
+// Content of this file is copied from FASTBuild (thirdparty/fastbuild/Code/fbuild.bff)
+
+// Platforms
+#include "../thirdparty/fastbuild/External/SDK/GCC/GCC.bff"
+#include "../thirdparty/fastbuild/External/SDK/VisualStudio/VisualStudio.bff"
+#include "../thirdparty/fastbuild/External/SDK/Clang/Clang.bff"
+#include "../thirdparty/fastbuild/External/SDK/Windows/Windows.bff"
+
+// Helpers
+#include "../thirdparty/fastbuild/Code/.FASTBuild/HelperFunctions.bff"
+
+//------------------------------------------------------------------------------
+// Config Defines
+//------------------------------------------------------------------------------
+.Debug_Config =
+[
+    .CompilerOptions                = ' -DDEBUG -DPROFILING_ENABLED'
+    .CompilerOptionsC               = .CompilerOptions
+
+    .BuildConfigName                = 'Debug'
+
+    #if !BUILDING_FROM_TESTS
+        // Build writable files (Perforce "Open for edit") outside of Unity
+        // to improve iteration times.
+        // - Only in Debug as this impacts performance (inlining)
+        // - Only when not building from tests (FASTBuild building itself)
+        .UnityInputIsolateWritableFiles = true
+        // Also not when building on CI (which builds from git).
+        #if CI_BUILD
+            .UnityInputIsolateWritableFiles = false
+        #endif
+    #endif
+]
+.Analyze_Config =
+[
+    .CompilerOptions                = ' -DDEBUG -DPROFILING_ENABLED -DANALYZE'
+    .CompilerOptionsC               = .CompilerOptions
+    .BuildConfigName                = 'Analyze'
+]
+.Profile_Config =
+[
+    .CompilerOptions                = ' -DRELEASE -DPROFILING_ENABLED'
+    .CompilerOptionsC               = .CompilerOptions
+
+    .BuildConfigName                = 'Profile'
+]
+.Release_Config =
+[
+    .CompilerOptions                = ' -DRELEASE'
+    .CompilerOptionsC               = .CompilerOptions
+    .CompilerOptionsDeoptimized     = .CompilerOptions
+
+    .BuildConfigName                = 'Release'
+]
+.ASan_Config =
+[
+    .CompilerOptions                = ' -DRELEASE'
+                                    + ' -fsanitize=address -fno-omit-frame-pointer'
+    .CompilerOptionsC               = .CompilerOptions
+    .LinkerOptions                  = ' -fsanitize=address'
+
+    .BuildConfigName                = 'ASan'
+]
+.MSan_Config =
+[
+    .CompilerOptions                = ' -DRELEASE'
+                                    + ' -fsanitize=memory -fsanitize-memory-track-origins -fno-omit-frame-pointer'
+    .CompilerOptionsC               = .CompilerOptions
+    .LinkerOptions                  = ' -fsanitize=memory -L../External/MSan'
+
+    .BuildConfigName                = 'MSan'
+]
+.TSan_Config =
+[
+    .CompilerOptions                = ' -DRELEASE'
+                                    + ' -fsanitize=thread'
+    .CompilerOptionsC               = .CompilerOptions
+    .CompilerOptionsPCH             = .CompilerOptions
+    .LinkerOptions                  = ' -fsanitize=thread'
+
+    .BuildConfigName                = 'TSan'
+]
+.Fuzzer_Config =
+[
+    #if USING_CLANG_6
+        // These options are valid for Clang >= 6.0.0:
+        .CompilerOptions                = ' -fsanitize=fuzzer-no-link'
+    #else
+        // These options are valid for Clang < 6.0.0:
+        .CompilerOptions                = ' -fsanitize-coverage=trace-pc-guard,trace-cmp'
+    #endif
+    .CompilerOptionsC               = .CompilerOptions
+]
+
+//------------------------------------------------------------------------------
+// Optimizations (MSVC)
+//------------------------------------------------------------------------------
+#if __WINDOWS__
+    .Debug_Optimizations_MSVC =
+    [
+        .CompilerOptions                = ' /MTd /Od /RTC1 /GS /Oy- /GR-'
+        .CompilerOptionsC               = .CompilerOptions
+
+        .Linker_CRTLibs_Static  = ' LIBCMTD.LIB'
+                                + ' LIBCPMTD.LIB'
+                                + ' libvcruntimed.lib'
+                                + ' libucrtd.lib'
+    ]
+    .Analyze_Optimizations_MSVC =
+    [
+        Using( .Debug_Optimizations_MSVC )
+        .CompilerOptions                + .StaticAnalysisOptions
+        .CompilerOptionsC               = .CompilerOptions
+    ]
+    .Profile_Optimizations_MSVC =
+    [
+        .CompilerOptions                = ' /MT /Ox /Oy /Oi /GS- /GF /Gy /Gw /GR- /Zo'
+        .CompilerOptionsC               = .CompilerOptions
+        .LinkerOptions                  = ' /OPT:REF,ICF'
+
+        .Linker_CRTLibs_Static  = ' LIBCMT.LIB'
+                                + ' LIBCPMT.LIB'
+                                + ' libvcruntime.lib'
+                                + ' libucrt.lib'
+    ]
+    .Release_Optimizations_MSVC =
+    [
+        Using( .Profile_Optimizations_MSVC )
+        .CompilerOptionsDeoptimized     = .CompilerOptions
+                                        - ' /Ox'
+                                        + ' /Od'
+    ]
+#endif
+
+//------------------------------------------------------------------------------
+// Optimizations (Clang/GCC)
+//------------------------------------------------------------------------------
+.Debug_Optimizations =
+[
+    #if __WINDOWS__ // Using clang-cl.exe on Windows
+        .CompilerOptions                = ' /Od'
+    #else
+        .CompilerOptions                = ' -O0'
+    #endif
+    .CompilerOptionsC               = .CompilerOptions
+
+    #if __WINDOWS__ // Using clang-cl.exe on Windows
+        .Linker_CRTLibs_Static  = ' LIBCMTD.LIB'
+                                + ' LIBCPMTD.LIB'
+                                + ' libvcruntimed.lib'
+                                + ' libucrtd.lib'
+    #endif
+]
+.Analyze_Optimizations =
+[
+    // TODO:B - Windows Clang Static Analysis config is incomplete
+    Using( .Debug_Optimizations )
+    .CompilerOptions                + ' --analyze'
+    .CompilerOptionsC               = .CompilerOptions
+]
+.Profile_Optimizations =
+[
+    .CompilerOptions                = ' -O2'
+    .CompilerOptionsC               = .CompilerOptions
+
+    #if __WINDOWS__ // Using clang-cl.exe on Windows
+        .Linker_CRTLibs_Static  = ' LIBCMT.LIB'
+                                + ' LIBCPMT.LIB'
+                                + ' libvcruntime.lib'
+                                + ' libucrt.lib'
+    #endif
+]
+.Release_Optimizations =
+[
+    Using( .Profile_Optimizations )
+    .CompilerOptionsDeoptimized     = .CompilerOptions
+                                    - ' -O2'
+                                    + ' -O0'
+]
+
+// X64
+//------------------------------------------------------------------------------
+#if __WINDOWS__
+    .X64BaseConfig              = .ToolChain_VS_Windows_X64
+                                + .Windows10_SDK_X64
+    .X64DebugConfig             = .X64BaseConfig
+                                + .Debug_Config
+                                + .Debug_Optimizations_MSVC
+    .X64AnalyzeConfig           = .X64BaseConfig
+                                + .Analyze_Config
+                                + .Analyze_Optimizations_MSVC
+    .X64ReleaseConfig           = .X64BaseConfig
+                                + .Release_Config
+                                + .Release_Optimizations_MSVC
+    .X64ProfileConfig           = .X64BaseConfig
+                                + .Profile_Config
+                                + .Profile_Optimizations_MSVC
+    .X64ASanConfig              = .X64BaseConfig
+                                + .ASan_Config
+                                + .Release_Optimizations_MSVC
+    .X64TSanConfig              = .X64BaseConfig
+                                + .TSan_Config
+                                + .Release_Optimizations_MSVC
+#endif
+
+// X64 Clang
+//------------------------------------------------------------------------------
+#if __WINDOWS__
+    .X64ClangBaseConfig         = .ToolChain_Clang_Windows
+                                + .Windows10_SDK_X64_ClangCl
+    .X64ClangDebugConfig        = .X64ClangBaseConfig
+                                + .Debug_Config
+                                + .Debug_Optimizations
+    .X64ClangAnalyzeConfig      = .X64ClangBaseConfig
+                                + .Analyze_Config
+                                + .Analyze_Optimizations
+    .X64ClangReleaseConfig      = .X64ClangBaseConfig
+                                + .Release_Config
+                                + .Release_Optimizations
+    .X64ClangProfileConfig      = .X64ClangBaseConfig
+                                + .Profile_Config
+                                + .Profile_Optimizations
+    .X64ClangASanConfig         = .X64ClangBaseConfig
+                                + .ASan_Config
+                                + .Release_Optimizations
+    .X64ClangTSanConfig         = .X64ClangBaseConfig
+                                + .TSan_Config
+                                + .Release_Optimizations
+#endif
+
+// Linux
+//------------------------------------------------------------------------------
+#if __LINUX__
+    .LinuxCompatibilityOptions =
+    [
+                                // Compatibility with older glibc (must be first!)
+        .CommonCompilerOptions  = ' -include Core/Env/glibc_compat.h'
+        .CompilerOptions        = .CommonCompilerOptions
+        .CompilerOptionsC       = .CommonCompilerOptions
+    ]
+
+    // GCC
+    .X64BaseConfig_Linux        = .LinuxCompatibilityOptions // Must be first
+                                + .ToolChain_GCC_Linux
+    .X64DebugConfig_Linux       = .X64BaseConfig_Linux
+                                + .Debug_Config
+                                + .Debug_Optimizations
+    .X64ReleaseConfig_Linux     = .X64BaseConfig_Linux
+                                + .Release_Config
+                                + .Release_Optimizations
+    .X64ProfileConfig_Linux     = .X64BaseConfig_Linux
+                                + .Profile_Config
+                                + .Profile_Optimizations
+    .X64ASanConfig_Linux        = .X64BaseConfig_Linux
+                                + .ASan_Config
+                                + .Release_Optimizations
+    .X64TSanConfig_Linux        = .X64BaseConfig_Linux
+                                + .TSan_Config
+                                + .Release_Optimizations
+    // Clang
+    .X64ClangBaseConfig_Linux   = .LinuxCompatibilityOptions // Must be first
+                                + .ToolChain_Clang_Linux
+    .X64ClangDebugConfig_Linux  = .X64ClangBaseConfig_Linux
+                                + .Debug_Config
+                                + .Debug_Optimizations
+    .X64ClangReleaseConfig_Linux = .X64ClangBaseConfig_Linux
+                                + .Release_Config
+                                + .Release_Optimizations
+    .X64ClangProfileConfig_Linux = .X64ClangBaseConfig_Linux
+                                + .Profile_Config
+                                + .Profile_Optimizations
+    .X64ClangASanConfig_Linux   = .X64ClangBaseConfig_Linux
+                                + .ASan_Config
+                                + .Fuzzer_Config
+                                + .Release_Optimizations
+    .X64ClangMSanConfig_Linux   = .X64ClangBaseConfig_Linux
+                                + .MSan_Config
+                                + .Fuzzer_Config
+                                + .Release_Optimizations
+    .X64ClangTSanConfig_Linux   = .X64ClangBaseConfig_Linux
+                                + .TSan_Config
+                                + .Release_Optimizations
+#endif
+
+// OSX
+//------------------------------------------------------------------------------
+#if __OSX__
+    .X64DebugConfig_OSX         = .ToolChain_Clang_OSX
+                                + .Debug_Config
+                                + .Debug_Optimizations
+    .X64ReleaseConfig_OSX       = .ToolChain_Clang_OSX
+                                + .Release_Config
+                                + .Release_Optimizations
+    .X64ProfileConfig_OSX       = .ToolChain_Clang_OSX
+                                + .Profile_Config
+                                + .Profile_Optimizations
+
+    #if CLANG_SUPPORTS_ARMOSX
+        .ARM64DebugConfig_OSX       = .ToolChain_Clang_ARMOSX
+                                    + .Debug_Config
+                                    + .Debug_Optimizations
+        .ARM64ReleaseConfig_OSX     = .ToolChain_Clang_ARMOSX
+                                    + .Release_Config
+                                    + .Release_Optimizations
+        .ARM64ProfileConfig_OSX     = .ToolChain_Clang_ARMOSX
+                                    + .Profile_Config
+                                    + .Profile_Optimizations
+    #endif
+#endif
+
+
+// Configurations
+//------------------------------------------------------------------------------
+#if __WINDOWS__
+    .BuildConfigs               = { .X64DebugConfig, .X64AnalyzeConfig, .X64ProfileConfig, .X64ReleaseConfig
+                                    .X64ASanConfig, .X64TSanConfig
+                                    .X64ClangDebugConfig, .X64ClangAnalyzeConfig .X64ClangProfileConfig, .X64ClangReleaseConfig
+                                    .X64ClangASanConfig, .X64ClangTSanConfig }
+#endif
+#if __LINUX__
+    .BuildConfigs               = { .X64DebugConfig_Linux, .X64ProfileConfig_Linux, .X64ReleaseConfig_Linux,
+                                    .X64ASanConfig_Linux, .X64TSanConfig_Linux,
+                                    .X64ClangDebugConfig_Linux, .X64ClangProfileConfig_Linux, .X64ClangReleaseConfig_Linux,
+                                    .X64ClangASanConfig_Linux, .X64ClangMSanConfig_Linux, .X64ClangTSanConfig_Linux }
+#endif
+#if __OSX__
+    .BuildConfigs               = { .X64DebugConfig_OSX, .X64ProfileConfig_OSX, .X64ReleaseConfig_OSX }
+    #if CLANG_SUPPORTS_ARMOSX
+                                + { .ARM64DebugConfig_OSX, .ARM64ProfileConfig_OSX, .ARM64ReleaseConfig_OSX }
+    #endif
+#endif
+
+.Targets_x64_Debug = {}
+.Targets_x64_Analyze = {}
+.Targets_x64_Profile = {}
+.Targets_x64_Release = {}
+.Targets_x64_ASan = {}
+.Targets_x64_TSan = {}
+.Targets_x64Clang_Debug = {}
+.Targets_x64Clang_Analyze = {}
+.Targets_x64Clang_Profile = {}
+.Targets_x64Clang_Release = {}
+.Targets_x64Clang_ASan = {}
+.Targets_x64Clang_TSan = {}
+
+.Targets_x64Linux_Debug = {}
+.Targets_x64Linux_Profile = {}
+.Targets_x64Linux_Release = {}
+.Targets_x64Linux_ASan = {}
+.Targets_x64Linux_TSan = {}
+.Targets_x64ClangLinux_Debug = {}
+.Targets_x64ClangLinux_Profile = {}
+.Targets_x64ClangLinux_Release = {}
+.Targets_x64ClangLinux_ASan = {}
+.Targets_x64ClangLinux_MSan = {}
+.Targets_x64ClangLinux_TSan = {}
+
+.Targets_x64OSX_Debug = {}
+.Targets_x64OSX_Profile = {}
+.Targets_x64OSX_Release = {}
+.Targets_ARMOSX_Debug = {}
+.Targets_ARMOSX_Profile = {}
+.Targets_ARMOSX_Release = {}

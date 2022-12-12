@@ -1,0 +1,10 @@
+# FASTBuild
+*.fdb
+tmp/
+ftmp/
+bin/
+out/
+profile.json
+
+# macOS
+.DS_Store

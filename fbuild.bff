@@ -1,0 +1,21 @@
+#include "config/base.bff"
+#include "config/project/base.bff"
+
+// We with the workding directory as thirdparty/fastbuild/Code so we can use
+// its bff files without modification, so the input base needs to go back to
+// our repo root.
+.InputBase = '../../../'
+.OutputBase = '../../../out/'
+
+// Include the parts of FASTBuild we build against
+#include "thirdparty/fastbuild/External/LZ4/LZ4.bff"
+#include "thirdparty/fastbuild/Code/Core/Core.bff"
+#include "thirdparty/fastbuild/Code/Tools/FBuild/FBuildCore/FBuildCore.bff"
+
+// Add our libraries and executables
+#include "thirdparty/luau/luau.bff"
+#include "src/lfbuild/lfbuild.bff"
+
+#include "config/aliases.bff"
+
+#include "config/project/generation.bff"
