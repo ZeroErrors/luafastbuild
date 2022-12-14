@@ -31,7 +31,8 @@
             // Output
             .CompilerOutputPath         = '$OutputBase$/$ProjectPath$/'
 
-            .CompilerOptions            + ' "-I$InputBase$/thirdparty/luau/luau/VM/include"'
+            .CompilerOptions            + ' "-I$InputBase$/$ProjectPath$"'
+                                        + ' "-I$InputBase$/thirdparty/luau/luau/VM/include"'
                                         + ' "-I$InputBase$/thirdparty/luau/luau/Compiler/include"'
         }
 

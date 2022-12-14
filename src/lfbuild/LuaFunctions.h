@@ -1,3 +1,5 @@
+#pragma once
+
 class LuaNodeGraph;
 class BFFParser;
 struct lua_State;

@@ -1,7 +1,8 @@
-Exec('all')
+Print("bff-where")
+Exec('bff-where')
 {
   .ExecExecutable = 'C:\Windows\System32\where.exe'
   .ExecArguments = 'where.exe'
-  .ExecOutput = 'out/out.txt'
+  .ExecOutput = 'out/bff-where.txt'
   .ExecUseStdOutAsOutput = true
 }

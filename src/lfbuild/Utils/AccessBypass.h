@@ -1,4 +1,5 @@
 // This file defines a template that is used to bypass member access restrictions
+#pragma once
 
 #define ACCESS_BYPASS_DEFINE_MEMBER(type, member_type, member)                             \
     namespace __ ## type { struct member; };                                        \
@@ -54,7 +55,7 @@ class MemberReinterpretCastGetter {
 #define ACCESS_BYPASS_DEFINE_FUNC(type, func_return, func_args, func)               \
     namespace __ ## type {                                                          \
         struct func;                                                                \
-        typedef void(type::* __ ## func)(func_args);                                \
+        typedef func_return(type::* __ ## func)func_args;                           \
     };                                                                              \
     __ ## type::__ ## func __get_func( __ ## type::func );                          \
     template class FuncGetter<                                                      \

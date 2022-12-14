@@ -1,5 +1,10 @@
 Print("Hello fbuild.bff")
 
-Lua("test.lua")
+ExecuteLua("test.lua")
 
-#include "where.bff"
+#include "../where.bff"
+
+Alias('all')
+{
+  .Targets = { "bff-where", "lua-where" }
+}

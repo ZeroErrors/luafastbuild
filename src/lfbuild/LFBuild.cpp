@@ -84,14 +84,7 @@ bool LFBuild::LuaInitialize( const char *nodeGraphDBFile )
     SmallBlockAllocator::SetSingleThreadedMode( true );
 
     // Note: @Modified: Added .lua root config check
-    if ( rootConfigFile.EndsWithI( ".lua" ) )
-    {
-        m_DependencyGraph = LuaNodeGraph::Initialize( L, rootConfigFile.Get(), m_DependencyGraphFile.Get(), m_Options.m_ForceDBMigration_Debug );
-    }
-    else
-    {
-        m_DependencyGraph = NodeGraph::Initialize( rootConfigFile.Get(), m_DependencyGraphFile.Get(), m_Options.m_ForceDBMigration_Debug );
-    }
+    m_DependencyGraph = LuaNodeGraph::Initialize( L, rootConfigFile, m_DependencyGraphFile.Get(), m_Options.m_ForceDBMigration_Debug );
 
     SmallBlockAllocator::SetSingleThreadedMode( false );
 

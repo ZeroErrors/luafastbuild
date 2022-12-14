@@ -1,6 +1,6 @@
 #include "LuaNodeGraph.h"
-
 #include "LuaFunctions.h"
+#include "Utils/FBuildAccessBypass.h"
 
 #include "Tools/FBuild/FBuildCore/FLog.h"
 #include "Tools/FBuild/FBuildCore/FBuild.h"
@@ -21,15 +21,91 @@
 // Note: Needed to free Lua allocations
 #include <malloc.h>
 
-ACCESS_BYPASS_DEFINE_FUNC(BFFParser, void, , CreateBuiltInVariables);
-ACCESS_BYPASS_DEFINE_FUNC(NodeGraph, void, const NodeGraph & oldNodeGraph, Migrate);
+LuaNodeGraph::LuaNodeGraph( lua_State * L ) : L(L)
+{
+}
 
 // Note: @Modified version of NodeGraph::ParseFromRoot
-bool LuaNodeGraph::ParseFromLuaRoot( lua_State *L, const char * filename )
+bool LuaNodeGraph::ParseFromRoot( const AString & filename )
 {
     // @Modified: Bypass access
     auto _m_UsedFiles = __NodeGraph::m_UsedFiles::ptr(this);
     ASSERT( _m_UsedFiles->IsEmpty() ); // NodeGraph cannot be recycled
+
+    BFFParser bffParser( *this );
+
+    // @Modfied: Access bypass
+    __BFFParser::CreateBuiltInVariables::call(&bffParser);
+
+    LuaUserdata userdata = { this, &bffParser };
+    lua_callbacks(L)->userdata = &userdata;
+
+    bool ok = false;
+    if ( filename.EndsWithI(".bff") )
+    {
+
+        ok = ParseBffFile( bffParser, filename );
+    }
+    else
+    {
+        ok = ParseLuaFile( filename.Get() );
+    }
+
+    lua_callbacks(L)->userdata = nullptr;
+
+    if ( ok )
+    {
+        // Store a pointer to the SettingsNode as defined by the BFF, or create a
+        // default instance if needed.
+        const AStackString<> settingsNodeName( "$$Settings$$" );
+        const Node * settingsNode = FindNode( settingsNodeName );
+
+        // @Modified: Bypass access
+        auto _m_Settings = __NodeGraph::m_Settings::ptr(this);
+        *_m_Settings = settingsNode ? settingsNode->CastTo< SettingsNode >() : CreateSettingsNode( settingsNodeName ); // Create a default
+
+        // Parser will populate m_UsedFiles
+        // @Modified: Bypass access
+        const Array<BFFFile *> & usedFiles = __BFFParser::GetUsedFiles::call(&bffParser);
+        _m_UsedFiles->SetCapacity( _m_UsedFiles->GetSize() + usedFiles.GetSize() );
+        for ( const BFFFile * f : usedFiles )
+        {
+            _m_UsedFiles->EmplaceBack( f->GetFileName(), f->GetTimeStamp(), f->GetHash() );
+        }
+    }
+
+    return ok;
+}
+
+bool LuaNodeGraph::ParseBffFile( BFFParser & bffParser, const AString & filename )
+{
+    auto _m_Tokenizer = __BFFParser::m_Tokenizer::ptr(&bffParser);
+    if ( !_m_Tokenizer->TokenizeFromFile( filename ) )
+    {
+        FLOG_ERROR("Error reading BFF '%s'", filename.Get());
+        return false;
+    }
+
+    const Array<BFFToken>& tokens = _m_Tokenizer->GetTokens();
+    if ( tokens.IsEmpty() )
+    {
+        return true; // An empty file is ok
+    }
+
+    BFFTokenRange range( tokens.Begin(), tokens.End() );
+    if ( !bffParser.Parse( range ) )
+    {
+        FLOG_ERROR("Error reading BFF '%s'", filename.Get());
+    }
+
+    return true;
+}
+
+// Note: @Modified version of NodeGraph::ParseFromRoot
+bool LuaNodeGraph::ParseLuaFile( const char * filename )
+{
+    // @Modified: Bypass access
+    auto _m_UsedFiles = __NodeGraph::m_UsedFiles::ptr(this);
 
     BFFFile file;
     if ( !file.Load(AString( filename ), nullptr ) )
@@ -53,16 +129,7 @@ bool LuaNodeGraph::ParseFromLuaRoot( lua_State *L, const char * filename )
     int status = 0;
     if (result == 0)
     {
-        BFFParser parser( *this );
-        // @Modfied: Access bypass
-        __BFFParser::CreateBuiltInVariables::call(&parser);
-
-        LuaUserdata userdata = { this, &parser };
-        lua_callbacks(L)->userdata = &userdata;
-
         status = lua_resume(L, NULL, 0);
-
-        lua_callbacks(L)->userdata = nullptr;
     }
     else
     {
@@ -88,31 +155,19 @@ bool LuaNodeGraph::ParseFromLuaRoot( lua_State *L, const char * filename )
         FLOG_ERROR("%s", error.Get());
     }
 
-    if ( status == 0 )
-    {
-        // Store a pointer to the SettingsNode as defined by the BFF, or create a
-        // default instance if needed.
-        const AStackString<> settingsNodeName( "$$Settings$$" );
-        const Node * settingsNode = FindNode( settingsNodeName );
-
-        // @Modified: Bypass access
-        auto _m_Settings = __NodeGraph::m_Settings::ptr(this);
-        *_m_Settings = settingsNode ? settingsNode->CastTo< SettingsNode >() : CreateSettingsNode( settingsNodeName ); // Create a default
-    }
-
     return status == 0;
 }
 
 // Note: Modified version of NodeGraph::Initialize
 NodeGraph * LuaNodeGraph::Initialize( lua_State *L,
-                                      const char * file,
+                                      const AString & file,
                                       const char * nodeGraphDBFile,
                                       bool forceMigration )
 {
     using LoadResult = NodeGraph::LoadResult;
     PROFILE_FUNCTION;
 
-    ASSERT( file ); // must be supplied (or left as default)
+    ASSERT( !file.IsEmpty() ); // must be supplied (or left as default)
     ASSERT( nodeGraphDBFile ); // must be supplied (or left as default)
 
     // Try to load the old DB
@@ -158,9 +213,10 @@ NodeGraph * LuaNodeGraph::Initialize( lua_State *L,
 
             // Create a fresh DB by parsing the BFF
             FDELETE( oldNG );
-            LuaNodeGraph * newNG = FNEW( LuaNodeGraph );
+            LuaNodeGraph * newNG = FNEW( LuaNodeGraph )(L);
+
             // Note: @Modified: if ( newNG->ParseFromRoot( bffFile ) == false )
-            if ( newNG->ParseFromLuaRoot( L, file ) == false )
+            if ( newNG->ParseFromRoot( file ) == false )
             {
                 FDELETE( newNG );
                 return nullptr; // ParseFromRoot will have emitted an error
@@ -170,9 +226,9 @@ NodeGraph * LuaNodeGraph::Initialize( lua_State *L,
         case LoadResult::OK_BFF_NEEDS_REPARSING:
         {
             // Create a fresh DB by parsing the modified BFF
-            LuaNodeGraph * newNG = FNEW( LuaNodeGraph );
+            LuaNodeGraph * newNG = FNEW( LuaNodeGraph )(L);
             // Note: @Modified: if ( newNG->ParseFromRoot( bffFile ) == false )
-            if ( newNG->ParseFromLuaRoot( L, file ) == false )
+            if ( newNG->ParseFromRoot( file ) == false )
             {
                 FDELETE( newNG );
                 FDELETE( oldNG );

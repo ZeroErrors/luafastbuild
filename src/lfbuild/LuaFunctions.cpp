@@ -1,6 +1,7 @@
 #include "LuaFunctions.h"
-
 #include "LuaNodeGraph.h"
+#include "Functions/FunctionExecuteLua.h"
+#include "Utils/FBuildAccessBypass.h"
 
 #include "Tools/FBuild/FBuildCore/FLog.h"
 #include "Tools/FBuild/FBuildCore/BFF/BFFFile.h"
@@ -8,6 +9,8 @@
 #include "Tools/FBuild/FBuildCore/BFF/Tokenizer/BFFToken.h"
 #include "Tools/FBuild/FBuildCore/BFF/Tokenizer/BFFTokenRange.h"
 #include "Tools/FBuild/FBuildCore/BFF/Functions/Function.h"
+
+#include "Core/FileIO/PathUtils.h"
 
 #include "lua.h"
 #include "lualib.h"
@@ -25,6 +28,22 @@ extern Array<const Function *> g_Functions;
 
 void lua_to_bfftokens( lua_State * L, int idx, const BFFFile & file, Array<BFFToken> & tokens );
 
+// Copied from BFFTokenizer::ExpandIncludePath
+void ExpandIncludePath( const AString & currentFile, AString & includePath )
+{
+    // Includes are relative to current file, unless full paths
+    if ( PathUtils::IsFullPath( includePath ) == false )
+    {
+        // Determine path from current file
+        const char * lastSlash = currentFile.FindLast( NATIVE_SLASH );
+        lastSlash = lastSlash ? lastSlash : currentFile.FindLast( OTHER_SLASH );
+        lastSlash = lastSlash ? ( lastSlash + 1 ): currentFile.Get(); // file only, truncate to empty
+        AStackString<> tmp( currentFile.Get(), lastSlash );
+        tmp += includePath;
+        includePath = tmp;
+    }
+}
+
 /* Find the size of the array on the top of the Lua stack
  * -1   object (not a pure array)
  * >=0  elements in array
@@ -39,6 +58,10 @@ static int lua_array_length( lua_State *l, int idx )
     items = 0;
 
     lua_pushnil(l);
+
+    // Since we pushed onto the stack we need to adjust the index
+    if (idx < 0) idx--;
+
     /* startkey */
     while (lua_next(l, idx) != 0)
     {
@@ -80,6 +103,10 @@ static int lua_array_length( lua_State *l, int idx )
 void lua_string_table_content_to_bfftokens( lua_State * L, int idx, const BFFFile & file, Array<BFFToken> & tokens )
 {
     lua_pushnil(L);
+
+    // Since we pushed onto the stack we need to adjust the index
+    if (idx < 0) idx--;
+
     /* startkey */
     while (lua_next(L, idx))
     {
@@ -159,13 +186,17 @@ void lua_to_bfftokens( lua_State * L, int idx, const BFFFile & file, Array<BFFTo
 
             tokens.EmplaceBack(
                 file, file.GetSourceFileContents().Get(),
-                BFFTokenType::SquareBracket,
-                AStackString( "[" )
+                BFFTokenType::CurlyBracket,
+                AStackString( "{" )
             );
 
             int last_index = 1;
 
             lua_pushnil(L);
+
+            // Since we pushed onto the stack we need to adjust the index
+            if (idx < 0) idx--;
+
             /* startkey */
             while (lua_next(L, idx))
             {
@@ -190,6 +221,7 @@ void lua_to_bfftokens( lua_State * L, int idx, const BFFFile & file, Array<BFFTo
                 }
 
                 lua_to_bfftokens( L, -1, file, tokens );
+                last_index++;
 
                 if (index < array_length)
                 {
@@ -205,8 +237,8 @@ void lua_to_bfftokens( lua_State * L, int idx, const BFFFile & file, Array<BFFTo
 
             tokens.EmplaceBack(
                 file, file.GetSourceFileContents().Get(),
-                BFFTokenType::SquareBracket,
-                AStackString( "]" )
+                BFFTokenType::CurlyBracket,
+                AStackString( "}" )
             );
         }
     }
@@ -346,13 +378,36 @@ static int lua_require(lua_State* L)
 
     lua_pop(L, 1);
 
+    lua_Debug ar;
+    if (lua_getinfo(L, lua_stackdepth(L) - 1, "s", &ar) == 0)
+    {
+        luaL_error(L, "Failed to get lua source");
+    }
+
+    AString currentFile;
+    switch (*ar.source)
+    {
+    case '=':
+        currentFile = AString(ar.source + 1);
+        break;
+    case '@':
+    default:
+        luaL_error(L, "unknown lua source format");
+        break;
+    }
+
+    // TODO: Support returning a bff file as a module that can be executed later and a table can be passed for the current scope?
     AString filename(name);
-    filename += ".lua"; // TODO: Support returning a bff file as a module that can be executed later and a table can be passed for the current scope?
+    if (!filename.EndsWithI(".lua"))
+    {
+        filename += ".lua";
+    }
+
+    ExpandIncludePath( currentFile, filename );
 
     BFFFile file;
     if ( !file.Load( filename, nullptr ) ) // TODO: Improve error messages (they currenly say BFF when we are loading a lua file here)
     {
-        // TODO: Improve where we search for this file. (eg. relative to root config?)
         luaL_error(L, "error reading lua '%s'", name);
     }
 
@@ -435,11 +490,56 @@ static int lua_require(lua_State* L)
     return finishrequire(L);
 }
 
-static int lua_execute_bff(lua_State*)
+static int lua_execute_bff(lua_State* L)
 {
-    //const char * name = luaL_checkstring(L, 1);
+    const char * name = luaL_checkstring(L, 1);
 
-    // TODO: Parse bff file
+    lua_Debug ar;
+    if (lua_getinfo(L, lua_stackdepth(L) - 1, "s", &ar) == 0)
+    {
+        luaL_error(L, "Failed to get lua source");
+    }
+
+    AString currentFile;
+    switch (*ar.source)
+    {
+    case '=':
+        currentFile = AString(ar.source + 1);
+        break;
+    case '@':
+    default:
+        luaL_error(L, "unknown lua source format");
+        break;
+    }
+
+    AString filename(name);
+    if (!filename.EndsWithI(".bff"))
+    {
+        filename += ".bff";
+    }
+
+    ExpandIncludePath( currentFile, filename );
+
+    LuaUserdata * userdata = static_cast<LuaUserdata *>(lua_callbacks(L)->userdata);
+
+    auto _m_Tokenizer = __BFFParser::m_Tokenizer::ptr(userdata->bffParser);
+    if ( !_m_Tokenizer->TokenizeFromFile( filename ) )
+    {
+        luaL_error(L, "error reading BFF '%s'", filename.Get());
+    }
+
+    const Array<BFFToken>& tokens = _m_Tokenizer->GetTokens();
+    if ( tokens.IsEmpty() )
+    {
+        return 0; // An empty file is ok
+    }
+
+    BFFTokenRange range( tokens.Begin(), tokens.End() );
+    if ( !userdata->bffParser->Parse( range ) )
+    {
+        luaL_error(L, "error reading lua '%s'", filename.Get());
+    }
+
     return 0;
 }
 
@@ -486,8 +586,11 @@ void RegisterLuaFunctions(lua_State * L)
     luaL_sandbox(L);
     luaL_sandboxthread(L);
 
-    // TODO: Allow BFF to call into Lua code.
-    //      Implement FunctionIncludeLua.
-    //      FunctionPrint seems to be a good example.
-    //g_Functions.Append( FNEW( FunctionIncludeLua ) );
+    // We must replace g_Functions with a resizable array.
+    Array<const Function *> temp;
+    temp.Append(g_Functions);
+    g_Functions = Move( temp );
+
+    // Allow BFF to call into Lua code.
+    g_Functions.Append( FNEW( FunctionExecuteLua ) );
 }
