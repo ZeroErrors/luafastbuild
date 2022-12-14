@@ -12,10 +12,10 @@
       "args": [
         "-verbose",
         "-config",
-        "fbuild.lua"
+        "test/lua/fbuild.lua"
       ],
       "stopAtEntry": false,
-      "cwd": "${workspaceFolder}/test/",
+      "cwd": "${workspaceFolder}/",
       "environment": [],
       "console": "externalTerminal"
     }

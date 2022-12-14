@@ -1,5 +1,7 @@
 #include "LuaNodeGraph.h"
 
+#include "LuaFunctions.h"
+
 #include "Tools/FBuild/FBuildCore/FLog.h"
 #include "Tools/FBuild/FBuildCore/FBuild.h"
 #include "Tools/FBuild/FBuildCore/BFF/BFFParser.h"
@@ -19,58 +21,41 @@
 // Note: Needed to free Lua allocations
 #include <malloc.h>
 
-#include "AccessBypass.h"
-
-struct NodeGraph_m_Settings {};
-const SettingsNode * NodeGraph::* get( NodeGraph_m_Settings );
-template class AccessBypass<
-    const SettingsNode * NodeGraph::*,
-    & NodeGraph::m_Settings,
-    NodeGraph_m_Settings
->;
-
-using LoadResult = NodeGraph::LoadResult;
+ACCESS_BYPASS_DEFINE_FUNC(BFFParser, void, , CreateBuiltInVariables);
+ACCESS_BYPASS_DEFINE_FUNC(NodeGraph, void, const NodeGraph & oldNodeGraph, Migrate);
 
 // Note: @Modified version of NodeGraph::ParseFromRoot
-bool LuaNodeGraph::ParseFromLuaRoot( lua_State *L, const char * file )
+bool LuaNodeGraph::ParseFromLuaRoot( lua_State *L, const char * filename )
 {
-    // ASSERT( m_UsedFiles.IsEmpty() ); // NodeGraph cannot be recycled
+    // @Modified: Bypass access
+    auto _m_UsedFiles = __NodeGraph::m_UsedFiles::ptr(this);
+    ASSERT( _m_UsedFiles->IsEmpty() ); // NodeGraph cannot be recycled
 
-    FLOG_VERBOSE( "Loading Root Lua '%s'", file );
-
-    // Open the file
-    FileStream stream;
-    if ( stream.Open( file ) == false )
+    BFFFile file;
+    if ( !file.Load(AString( filename ), nullptr ) )
     {
-        // missing lua is a fatal problem
-        FLOG_ERROR( "Failed to open Lua '%s'", file );
+        FLOG_ERROR( "Error reading Lua '%s'", filename );
         return false;
     }
 
-    // read entire file into memory
-    const uint32_t size = (uint32_t)stream.GetFileSize();
-    AString fileContents;
-    fileContents.SetLength( size );
-    if ( stream.Read( fileContents.Get(), size ) != size )
-    {
-        FLOG_ERROR( "Error reading Lua '%s'", file );
-        return false;
-    }
+    _m_UsedFiles->EmplaceBack( file.GetFileName(), file.GetTimeStamp(), file.GetHash() );
 
-    // TODO: Set LuaNodeGraph in Lua VM so it can be accessed from bindings
+    AString chunkname("=");
+    chunkname += filename;
+
+    const AString& content = file.GetSourceFileContents();
 
     size_t bytecodeSize = 0;
-    char* bytecode = luau_compile(fileContents.Get(), size, NULL, &bytecodeSize);
-    int result = luau_load(L, file, bytecode, bytecodeSize, 0);
+    char* bytecode = luau_compile(content.Get(), content.GetLength(), NULL, &bytecodeSize);
+    int result = luau_load(L, chunkname.Get(), bytecode, bytecodeSize, 0);
     free(bytecode); // Note: Since this was allocated by Lua we need to use regular free function
 
     int status = 0;
     if (result == 0)
     {
-        FLOG_OUTPUT( "Node Count Before: %d\n", GetNodeCount() );
-
         BFFParser parser( *this );
-        // TODO: parser.CreateBuiltInVariables();
+        // @Modfied: Access bypass
+        __BFFParser::CreateBuiltInVariables::call(&parser);
 
         LuaUserdata userdata = { this, &parser };
         lua_callbacks(L)->userdata = &userdata;
@@ -78,8 +63,6 @@ bool LuaNodeGraph::ParseFromLuaRoot( lua_State *L, const char * file )
         status = lua_resume(L, NULL, 0);
 
         lua_callbacks(L)->userdata = nullptr;
-
-        FLOG_OUTPUT( "Node Count After: %d\n", GetNodeCount() );
     }
     else
     {
@@ -112,18 +95,9 @@ bool LuaNodeGraph::ParseFromLuaRoot( lua_State *L, const char * file )
         const AStackString<> settingsNodeName( "$$Settings$$" );
         const Node * settingsNode = FindNode( settingsNodeName );
 
-        const SettingsNode * temp = settingsNode ? settingsNode->CastTo< SettingsNode >() : CreateSettingsNode( settingsNodeName ); // Create a default
-        // Note: @Modified: Bypass access restrictions
-        this->* get( NodeGraph_m_Settings() ) = temp;
-
-        // TODO: Populate m_UsedFiles with included lua files?
-        // Parser will populate m_UsedFiles
-        //const Array<BFFFile *> & usedFiles = bffParser.GetUsedFiles();
-        //m_UsedFiles.SetCapacity( usedFiles.GetSize() );
-        //for ( const BFFFile * file : usedFiles )
-        //{
-        //    m_UsedFiles.EmplaceBack( file->GetFileName(), file->GetTimeStamp(), file->GetHash() );
-        //}
+        // @Modified: Bypass access
+        auto _m_Settings = __NodeGraph::m_Settings::ptr(this);
+        *_m_Settings = settingsNode ? settingsNode->CastTo< SettingsNode >() : CreateSettingsNode( settingsNodeName ); // Create a default
     }
 
     return status == 0;
@@ -135,6 +109,7 @@ NodeGraph * LuaNodeGraph::Initialize( lua_State *L,
                                       const char * nodeGraphDBFile,
                                       bool forceMigration )
 {
+    using LoadResult = NodeGraph::LoadResult;
     PROFILE_FUNCTION;
 
     ASSERT( file ); // must be supplied (or left as default)
@@ -153,10 +128,6 @@ NodeGraph * LuaNodeGraph::Initialize( lua_State *L,
 
         res = LoadResult::OK_BFF_NEEDS_REPARSING; // forces migration
     }
-
-    // TODO: At the moment we don't populate m_UsedFiles so we must always force reparse or
-    //      lua code won't be rerun even if changed.
-    res = LoadResult::MISSING_OR_INCOMPATIBLE;
 
     // What happened?
     switch ( res )
@@ -209,8 +180,8 @@ NodeGraph * LuaNodeGraph::Initialize( lua_State *L,
             }
 
             // Migrate old DB info to new DB
-            ASSERT(false && "TODO: Implement DB migration for LuaNodeGraph");
-            // newNG->Migrate( *oldNG );
+            // @Modified: Access bypass
+            __NodeGraph::Migrate::call( newNG, *oldNG );
             FDELETE( oldNG );
 
             return newNG;

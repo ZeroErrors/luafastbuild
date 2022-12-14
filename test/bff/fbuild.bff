@@ -1,0 +1,5 @@
+Print("Hello fbuild.bff")
+
+Lua("test.lua")
+
+#include "where.bff"
