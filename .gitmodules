@@ -1,3 +1,6 @@
+[submodule "fastbuild"]
+	path = thirdparty/fastbuild
+	url = git@github.com:fastbuild/fastbuild.git
 [submodule "luau"]
-	path = luau
-	url = .\\thirdparty\\luau\\
+	path = thirdparty/luau/luau
+	url = git@github.com:Roblox/luau.git
