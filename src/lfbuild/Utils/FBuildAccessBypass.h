@@ -1,3 +1,5 @@
+#pragma once
+
 #include "AccessBypass.h"
 
 #include "Tools/FBuild/FBuildCore/BFF/BFFParser.h"
