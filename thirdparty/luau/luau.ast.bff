@@ -1,0 +1,134 @@
+// Luau.AST
+//------------------------------------------------------------------------------
+.LuauASTBasePath        = '$LuauBasePath$/AST/src'
+.LuauASTIncludePaths    = ' "-I$LuauBasePath$/Common/include"'
+                        + ' "-I$LuauVMBasePath$"'
+                        + ' "-I$LuauBasePath$/AST/include"'
+{
+    .ProjectName        = 'Luau.AST'
+    .ProjectPath        = '$LuauASTBasePath$'
+
+    // Target/Compiler specific options
+    .LuauASTOptions_x64     = [
+                            .LuauASTCompilerOptions = ' /wd4365'    // Signed/unsigned mismatch
+                                                    + ' /wd4389'    // Signed/unsigned mismatch
+                                                    + ' /wd4800'    // Implicit conversion
+                                                    + ' /wd4242'    // Implicit conversion
+                                                    + ' /wd4244'    // Implicit conversion
+                                                    + ' /wd5219'    // Implicit conversion
+                                                    + ' /wd4100'    // Unreferenced formal parameter
+                                                    + ' /wd4996'    // strcat function may be unsafe
+                                                    + ' /wd4456'    // Declaration hides previous local declaration
+                                                    + ' /wd4774'
+                                                    + ' /wd4310'
+                                                    + ' /wd4457'
+                                                    + ' /wd4706'
+                                                    + ' /wd4626'
+                                                    + ' /wd5027'
+                                                    + ' /wd5204'
+                                                    + ' /wd4458'
+                                                    + ' /wd4266'
+
+                                                    + ' -O2'        // Compile with optimizations even in debug to improve performance
+                                                    + ' /EHsc'      // Enable exceptions
+                          ]
+    .LuauASTOptions_x64Clang= [
+                            .LuauASTCompilerOptions = ' -O2'        // Compile with optimizations even in debug to improve performance
+                          ]
+    .LuauASTOptions_x64Linux= [
+                            .LuauASTCompilerOptions = ' -O2'        // Compile with optimizations even in debug to improve performance
+                          ]
+    .LuauASTOptions_x64ClangLinux  = .LuauASTOptions_x64Linux
+    .LuauASTOptions_x64OSX  = [
+                            .LuauASTCompilerOptions = ' -O2'        // Compile with optimizations even in debug to improve performance
+                          ]
+    .LuauASTOptions_ARMOSX  = [
+                            .LuauASTCompilerOptions = ' -O2'        // Compile with optimizations even in debug to improve performance
+                          ]
+
+    // Library
+    //--------------------------------------------------------------------------
+    .ProjectConfigs = {}
+    ForEach( .BuildConfig in .BuildConfigs )
+    {
+        Using( .BuildConfig )
+
+        .OutputBase + '\$Platform$-$BuildConfigName$'
+
+        Using( ."LuauASTOptions_$Platform$" )
+
+        // Static Library
+        ObjectList( '$ProjectName$-Lib-$Platform$-$BuildConfigName$' )
+        {
+            // Input - Only build specific files we use
+            .CompilerInputPath          = '$LuauASTBasePath$'
+
+            // Options
+            .CompilerOptions            = .CompilerOptionsC
+                                        + .LuauASTIncludePaths
+                                        + .LuauASTCompilerOptions
+                                        + ' -DLUA_API=extern'
+                                        + ' -DLUACODE_API=extern'
+
+                                        #if __WINDOWS__
+                                            // Remove flags that disable opimizations
+                                            - ' /Od'
+                                            - ' /RTC1'
+
+                                            // Disable clang-cl static analysis if enabled for this config
+                                            // (we won't fix warnings in 3rd party code)
+                                            - ' --analyze'
+                                        #else
+                                            - ' -O0'
+                                        #endif
+
+                                        // Disable warnings if using Clang. There are too many warnings in LZ4
+                                        // and they differ with every version of Clang
+                                        - ' -Wall'
+                                        - ' -Werror'
+                                        - ' -Wfatal-errors'
+                                        - ' -Wextra'
+                                        - ' -Wshadow'
+                                        - ' -Weverything'
+
+            // Output
+            .CompilerOutputPath         = '$OutputBase$/External/$ProjectName$/'
+        }
+        Alias( '$ProjectName$-$Platform$-$BuildConfigName$' ) { .Targets = '$ProjectName$-Lib-$Platform$-$BuildConfigName$' }
+
+        #if __WINDOWS__
+            .ProjectConfig              = [ Using( .'Project_$Platform$_$BuildConfigName$' ) .Target = '$ProjectName$-$Platform$-$BuildConfigName$' ]
+            ^ProjectConfigs             + .ProjectConfig
+        #endif
+        #if __OSX__
+            .ProjectConfig              = [ .Config = '$BuildConfigName$'   .Target = '$ProjectName$-x64OSX-$BuildConfigName$' ]
+            ^ProjectConfigs             + .ProjectConfig
+        #endif
+    }
+
+    // Aliases
+    //--------------------------------------------------------------------------
+    CreateCommonAliases( .ProjectName )
+
+    // // Visual Studio Project Generation
+    // //--------------------------------------------------------------------------
+    // #if __WINDOWS__
+    //     .ExtraOptions   = [
+    //                         .ProjectFiles = '../External/LZ4/LZ4.bff'
+    //                       ]
+    //     CreateVCXProject_Lib( .ProjectName, .ProjectPath, .ProjectConfigs, .ExtraOptions )
+    // #endif
+
+    // // XCode Project Generation
+    // //--------------------------------------------------------------------------
+    // #if __OSX__
+    //     XCodeProject( '$ProjectName$-xcodeproj' )
+    //     {
+    //         .ProjectOutput              = '../tmp/XCode/Projects/0_External/$ProjectName$.xcodeproj/project.pbxproj'
+    //         .ProjectInputPaths          = '$ProjectPath$/'
+    //         .ProjectBasePath            = '$ProjectPath$/'
+
+    //         .XCodeBuildWorkingDir       = '../../../../Code/'
+    //     }
+    // #endif
+}

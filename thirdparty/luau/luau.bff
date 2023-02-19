@@ -1,0 +1,5 @@
+.LuauBasePath        = '../../luau/luau'
+
+#include "luau.vm.bff"
+#include "luau.ast.bff"
+#include "luau.compiler.bff"
